@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <title>LeIA </> Tech</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --bg-dark-deep: #0D0D0D;
+            --bg-side: rgba(20, 20, 20, 0.7);
+            --blue-neon: #8ab4f8;
+            --orange-glow: #ff4500;
+            --text-primary: #E0E0E0;
+            --text-secondary: #9AA0A6;
+            --border-subtle: rgba(255, 255, 255, 0.08);
+        }
+
+        /* Estrutura Principal */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-dark-deep);
+            color: var(--text-primary);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .background-glow {
+            position: fixed;
+            width: 60vw;
+            height: 60vh;
+            filter: blur(160px);
+            opacity: 0.12;
+            border-radius: 50%;
+            z-index: -1;
+        }
+
+        .glow-blue {
+            background: radial-gradient(circle, #007bff 0%, transparent 70%);
+            top: -10%;
+            left: -10%;
+        }
+
+        .glow-orange {
+            background: radial-gradient(circle, var(--orange-glow) 0%, transparent 70%);
+            bottom: -10%;
+            right: -10%;
+        }
+
+        /* --- SIDEBAR COM TRUNCAMENTO (PULO DO GATO) --- */
+        #sidebar {
+            width: 260px;
+            background: var(--bg-side);
+            padding: 20px;
+            border-right: 1px solid var(--border-subtle);
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(20px);
+            z-index: 20;
+        }
+
+        .new-chat {
+            border: 1px solid var(--border-subtle);
+            background: rgba(255, 255, 255, 0.03);
+            color: white;
+            padding: 12px;
+            border-radius: 12px;
+            cursor: pointer;
+            margin-bottom: 25px;
+            transition: 0.3s;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+
+        .new-chat:hover {
+            background: rgba(138, 180, 248, 0.15);
+            border-color: var(--blue-neon);
+        }
+
+        #history-list {
+            flex: 1;
+            overflow-y: auto;
+            scrollbar-width: none;
+        }
+
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            transition: 0.2s;
+        }
+
+        .history-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--blue-neon);
+        }
+
+        /* Truncamento de texto sênior */
+        .history-item span:first-child {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 160px;
+            display: block;
+        }
+
+        .delete-btn {
+            font-size: 1.2rem;
+            opacity: 0.3;
+            transition: 0.2s;
+            padding-left: 10px;
+            cursor: pointer;
+        }
+
+        .delete-btn:hover {
+            color: #ff4f4f;
+            opacity: 1;
+        }
+
+        /* Área de Conteúdo */
+        #main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            height: 100%;
+        }
+
+        #chat-window {
+            flex: 1;
+            overflow-y: auto;
+            padding: 60px 20px 40px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 35px;
+            width: 100%;
+            max-width: 850px;
+            margin: 0 auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-subtle) transparent;
+        }
+
+        /* Formatação Clean (Sem Azul no Negrito) */
+        .bubble {
+            max-width: 88%;
+            padding: 18px 24px;
+            border-radius: 22px;
+            line-height: 1.8;
+            font-size: 1.05rem;
+            letter-spacing: 0.3px;
+        }
+
+        .bubble p {
+            margin-bottom: 15px;
+        }
+
+        .bubble ul,
+        .bubble ol {
+            margin-bottom: 15px;
+            padding-left: 20px;
+        }
+
+        .bubble li {
+            margin-bottom: 8px;
+        }
+
+        .bubble strong {
+            color: #ffffff;
+            font-weight: 700;
+        }
+
+        .user {
+            align-self: flex-end;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-subtle);
+            border-bottom-right-radius: 4px;
+        }
+
+        .ai-wrap {
+            display: flex;
+            gap: 18px;
+            align-self: flex-start;
+            width: 100%;
+        }
+
+        .ai-ico {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--blue-neon), var(--orange-glow));
+            box-shadow: 0 0 12px rgba(138, 180, 248, 0.5);
+            flex-shrink: 0;
+        }
+
+        /* Barra de Pergunta Elevada */
+        .input-wrapper {
+            width: 100%;
+            padding: 20px 0 40px 0;
+            background: linear-gradient(transparent, var(--bg-dark-deep) 30%);
+            display: flex;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        .search-area {
+            width: 90%;
+            max-width: 720px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 35px;
+            padding: 10px 22px;
+            display: flex;
+            align-items: center;
+            border: 1px solid var(--border-subtle);
+            backdrop-filter: blur(25px);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        input {
+            background: transparent;
+            border: none;
+            color: #fff;
+            flex: 1;
+            padding: 12px;
+            outline: none;
+            font-size: 1.1rem;
+        }
+
+        /* Botão de Envio Sênior */
+        .send-btn {
+            background: linear-gradient(135deg, var(--blue-neon), var(--orange-glow));
+            border: none;
+            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--blue-neon);
+            font-size: 1.2rem;
+            box-shadow: 0 0 15px rgba(138, 180, 248, 0.6);
+            transition: 0.3s;
+        }
+
+        .send-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+        }
+
+        /* Indicador Thinking bicolor */
+        .typing-indicator {
+            background: linear-gradient(90deg, var(--blue-neon), var(--orange-glow));
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 600;
+            font-style: italic;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        pre {
+            background: #000 !important;
+            padding: 20px;
+            border-radius: 14px;
+            border: 1px solid var(--border-subtle);
+            margin: 15px 0;
+            overflow-x: auto;
+        }
+
+        code {
+            color: var(--blue-neon);
+            font-family: 'Fira Code', monospace;
+            font-size: 0.95rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="background-glow glow-blue"></div>
+    <div class="background-glow glow-orange"></div>
+
+    <div id="sidebar">
+        <button class="new-chat" onclick="novoChat()">+ New chat</button>
+        <div id="history-list"></div>
+    </div>
+
+    <div id="main-content">
+        <div id="chat-window">
+            <div id="hero" style="text-align: center; margin-top: 12vh;">
+                <h1
+                    style="font-size: 3.5rem; font-weight: 700; background: linear-gradient(90deg, var(--blue-neon), #fff); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">
+                    Hi Stranger.</h1>
+                <p style="margin-top:15px; opacity:0.5;">How can LeIA help today?</p>
+            </div>
+        </div>
+
+        <div class="input-wrapper">
+            <div class="search-area">
+                <input id="userInput" placeholder="Ask anything..."
+                    onkeypress="if(event.key==='Enter') enviar()">
+                <button class="send-btn" onclick="enviar()">➔</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let session = localStorage.getItem('leia_session') || null;
+        const api = "https://func-leandro-ai-drdqfgdzekdsb7fc.eastus-01.azurewebsites.net/api";
+
+        // Função Enviar com Trava de Segurança
+        async function enviar() {
+            const input = document.getElementById('userInput');
+            const btn = document.querySelector('.send-btn');
+            const prompt = input.value.trim();
+
+            if (!prompt || btn.disabled) return;
+
+            // Bloqueia múltiplas chamadas
+            btn.disabled = true;
+            btn.style.opacity = "0.5";
+            btn.innerHTML = "⌛";
+
+            document.getElementById('hero').style.display = 'none';
+            addBubble(prompt, 'user');
+            input.value = '';
+
+            const loadingId = 'loading-' + Date.now();
+            const win = document.getElementById('chat-window');
+            win.insertAdjacentHTML('beforeend', `
+                <div class="ai-wrap" id="${loadingId}">
+                    <div class="ai-ico"></div>
+                    <div class="bubble ai typing-indicator">Analisando dados...</div>
+                </div>`);
+            win.scrollTop = win.scrollHeight;
+
+            try {
+                const res = await fetch(`${api}/AskAI`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, sessionId: session })
+                });
+                const data = await res.json();
+
+                document.getElementById(loadingId).remove();
+                session = data.sessionId;
+                localStorage.setItem('leia_session', session);
+                addBubble(data.answer, 'ai');
+                carregarMenu();
+            } catch (err) {
+                document.getElementById(loadingId).innerHTML = "Erro de conexão.";
+            } finally {
+                // Destrava o botão
+                btn.disabled = false;
+                btn.style.opacity = "1";
+                btn.innerHTML = "➔";
+            }
+        }
+
+        function addBubble(text, type) {
+            const win = document.getElementById('chat-window');
+            const content = type === 'ai' ? marked.parse(text) : text;
+            const html = type === 'user'
+                ? `<div class="bubble user">${content}</div>`
+                : `<div class="ai-wrap"><div class="ai-ico"></div><div class="bubble ai">${content}</div></div>`;
+            win.insertAdjacentHTML('beforeend', html);
+            win.scrollTop = win.scrollHeight;
+        }
+
+        async function carregarMenu() {
+            try {
+                const res = await fetch(`${api}/GetHistory`);
+                const chats = await res.json();
+                const list = document.getElementById('history-list');
+                list.innerHTML = '';
+                chats.forEach(c => {
+                    list.innerHTML += `<div class="history-item" onclick="abrir('${c.id}')"><span>${c.title || 'Conversa'}</span><span class="delete-btn" onclick="event.stopPropagation(); deletar('${c.id}')">×</span></div>`;
+                });
+            } catch (e) { }
+        }
+
+        async function carregarHistoricoSessao() {
+            if (!session) return;
+            try {
+                const res = await fetch(`${api}/GetSessionMessages?sessionId=${session}`);
+                const mensagens = await res.json();
+                if (mensagens.length > 0) {
+                    document.getElementById('hero').style.display = 'none';
+                    mensagens.forEach(m => {
+                        addBubble(m.userMessage, 'user');
+                        addBubble(m.aiMessage, 'ai');
+                    });
+                }
+            } catch (e) { }
+        }
+
+        function abrir(id) { localStorage.setItem('leia_session', id); location.reload(); }
+        function novoChat() { localStorage.removeItem('leia_session'); location.reload(); }
+        async function deletar(id) { await fetch(`${api}/DeleteHistory?sessionId=${id}`, { method: 'DELETE' }); if (session === id) novoChat(); else carregarMenu(); }
+
+        window.onload = () => { carregarMenu(); carregarHistoricoSessao(); document.getElementById('userInput').focus(); };
+    </script>
+</body>
+
+</html>
