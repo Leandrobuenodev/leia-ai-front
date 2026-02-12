@@ -31,5 +31,5 @@ jobs:
           ###### MAPEAMENTO DAS PASTAS ######
           app_location: "KumulusAI"      # Onde está o seu index.html
           api_location: "KumulusAI"      # Onde está o seu projeto C# (.csproj)
-          output_location: "KumulusAI"   # Onde a Azure vai buscar os arquivos finais
+          output_location: ""   
           ###################################
