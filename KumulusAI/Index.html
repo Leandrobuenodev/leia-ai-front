@@ -54,7 +54,7 @@
             right: -10%;
         }
 
-        /* --- SIDEBAR COM TRUNCAMENTO (PULO DO GATO) --- */
+        /* --- SIDEBAR --- */
         #sidebar {
             width: 260px;
             background: var(--bg-side);
@@ -108,7 +108,6 @@
             color: var(--blue-neon);
         }
 
-        /* Truncamento de texto sênior */
         .history-item span:first-child {
             white-space: nowrap;
             overflow: hidden;
@@ -153,7 +152,7 @@
             scrollbar-color: var(--border-subtle) transparent;
         }
 
-        /* Formatação Clean (Sem Azul no Negrito) */
+        /* Formatação das Bolhas */
         .bubble {
             max-width: 88%;
             padding: 18px 24px;
@@ -165,16 +164,6 @@
 
         .bubble p {
             margin-bottom: 15px;
-        }
-
-        .bubble ul,
-        .bubble ol {
-            margin-bottom: 15px;
-            padding-left: 20px;
-        }
-
-        .bubble li {
-            margin-bottom: 8px;
         }
 
         .bubble strong {
@@ -211,8 +200,40 @@
             padding: 20px 0 40px 0;
             background: linear-gradient(transparent, var(--bg-dark-deep) 30%);
             display: flex;
-            justify-content: center;
+            flex-direction: column;
+            align-items: center;
             z-index: 10;
+        }
+
+        /* Preview da Imagem */
+        #image-preview-container {
+            display: none;
+            margin-bottom: 10px;
+            position: relative;
+        }
+
+        #image-preview {
+            width: 60px;
+            height: 60px;
+            border-radius: 10px;
+            border: 1px solid var(--blue-neon);
+            object-fit: cover;
+        }
+
+        .remove-img {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #ff4f4f;
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
         }
 
         .search-area {
@@ -220,7 +241,7 @@
             max-width: 720px;
             background: rgba(255, 255, 255, 0.04);
             border-radius: 35px;
-            padding: 10px 22px;
+            padding: 8px 18px;
             display: flex;
             align-items: center;
             border: 1px solid var(--border-subtle);
@@ -228,7 +249,7 @@
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
         }
 
-        input {
+        input[type="text"] {
             background: transparent;
             border: none;
             color: #fff;
@@ -238,7 +259,21 @@
             font-size: 1.1rem;
         }
 
-        /* Botão de Envio Sênior */
+        /* Botão de Anexo (Clip) */
+        .clip-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.4rem;
+            cursor: pointer;
+            margin-right: 10px;
+            transition: 0.3s;
+        }
+
+        .clip-btn:hover {
+            color: var(--blue-neon);
+        }
+
         .send-btn {
             background: linear-gradient(135deg, var(--blue-neon), var(--orange-glow));
             border: none;
@@ -249,7 +284,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--blue-neon);
+            color: white;
             font-size: 1.2rem;
             box-shadow: 0 0 15px rgba(138, 180, 248, 0.6);
             transition: 0.3s;
@@ -259,7 +294,6 @@
             transform: scale(1.05);
         }
 
-        /* Indicador Thinking bicolor */
         .typing-indicator {
             background: linear-gradient(90deg, var(--blue-neon), var(--orange-glow));
             background-clip: text;
@@ -319,8 +353,16 @@
         </div>
 
         <div class="input-wrapper">
+            <div id="image-preview-container">
+                <img id="image-preview" src="" alt="Preview">
+                <div class="remove-img" onclick="removerImagem()">×</div>
+            </div>
             <div class="search-area">
-                <input id="userInput" placeholder="Ask anything..."
+                <input type="file" id="imageInput" accept="image/*" style="display: none;"
+                    onchange="processarImagem(event)">
+                <button class="clip-btn" onclick="document.getElementById('imageInput').click()">📎</button>
+
+                <input id="userInput" type="text" placeholder="Ask anything..."
                     onkeypress="if(event.key==='Enter') enviar()">
                 <button class="send-btn" onclick="enviar()">➔</button>
             </div>
@@ -329,23 +371,46 @@
 
     <script>
         let session = localStorage.getItem('leia_session') || null;
+        let selectedImageBase64 = null; // Variável para guardar a imagem
         const api = "https://func-leandro-ai-drdqfgdzekdsb7fc.eastus-01.azurewebsites.net/api";
 
-        // Função Enviar com Trava de Segurança
+        // Converte a imagem para Base64
+        function processarImagem(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                selectedImageBase64 = e.target.result.split(',')[1]; // Pega só o código Base64
+                document.getElementById('image-preview').src = e.target.result;
+                document.getElementById('image-preview-container').style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function removerImagem() {
+            selectedImageBase64 = null;
+            document.getElementById('imageInput').value = '';
+            document.getElementById('image-preview-container').style.display = 'none';
+        }
+
         async function enviar() {
             const input = document.getElementById('userInput');
             const btn = document.querySelector('.send-btn');
             const prompt = input.value.trim();
 
-            if (!prompt || btn.disabled) return;
+            if (!prompt && !selectedImageBase64) return;
+            if (btn.disabled) return;
 
-            // Bloqueia múltiplas chamadas
             btn.disabled = true;
             btn.style.opacity = "0.5";
             btn.innerHTML = "⌛";
 
             document.getElementById('hero').style.display = 'none';
-            addBubble(prompt, 'user');
+            addBubble(prompt || "Imagem enviada", 'user');
+
+            const currentImage = selectedImageBase64; // Copia a imagem atual
+            removerImagem(); // Limpa o preview no UI
             input.value = '';
 
             const loadingId = 'loading-' + Date.now();
@@ -361,7 +426,11 @@
                 const res = await fetch(`${api}/AskAI`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt, sessionId: session })
+                    body: JSON.stringify({
+                        prompt,
+                        sessionId: session,
+                        imageBase64: currentImage // Envia a imagem para a API
+                    })
                 });
                 const data = await res.json();
 
@@ -373,7 +442,6 @@
             } catch (err) {
                 document.getElementById(loadingId).innerHTML = "Erro de conexão.";
             } finally {
-                // Destrava o botão
                 btn.disabled = false;
                 btn.style.opacity = "1";
                 btn.innerHTML = "➔";

@@ -28,11 +28,14 @@ public class AskAI
         var requestBody = await req.ReadFromJsonAsync<PromptRequest>();
         string sessionId = requestBody?.SessionId ?? Guid.NewGuid().ToString();
         string userPrompt = requestBody?.Prompt ?? "";
+        string imageBase64 = requestBody?.ImageBase64 ?? "";
 
         var options = new ChatCompletionsOptions { DeploymentName = _deploymentName, MaxTokens = 800 };
-        options.Messages.Add(new ChatRequestSystemMessage("Você é a LeIA. Use Markdown para formatar a resposta (negritos, listas e código)."));
 
-        // BUSCA HISTÓRICO REAL NO BANCO
+        // Persona da LeIA configurada conforme pedido do PO
+        options.Messages.Add(new ChatRequestSystemMessage("Você é a LeIA, uma assistente técnica da Kumulus especializada em Azure e IA. Seja prestativa, profissional e use Markdown para formatar a resposta."));
+
+        // 1. RECUPERAÇÃO DE HISTÓRICO (Apenas texto)
         var history = _tableClient.QueryAsync<ChatHistoryEntity>(filter: $"PartitionKey eq '{sessionId}'");
         await foreach (var entity in history)
         {
@@ -40,13 +43,31 @@ public class AskAI
             options.Messages.Add(new ChatRequestAssistantMessage(entity.AIMessage));
         }
 
-        options.Messages.Add(new ChatRequestUserMessage(userPrompt));
+        // 2. LÓGICA MULTIMODAL (Decide se envia imagem ou não)
+        if (!string.IsNullOrEmpty(imageBase64))
+        {
+            // Se houver imagem, cria lista com Texto + Imagem
+            var multimodalContent = new List<ChatMessageContentItem>
+            {
+                new ChatMessageTextContentItem(userPrompt),
+                new ChatMessageImageContentItem(new Uri($"data:image/jpeg;base64,{imageBase64}"))
+            };
+            options.Messages.Add(new ChatRequestUserMessage(multimodalContent));
+        }
+        else
+        {
+            // Se não houver imagem, envia apenas o texto
+            options.Messages.Add(new ChatRequestUserMessage(userPrompt));
+        }
+
+        // 3. CHAMADA À IA
         var response = await _aiClient.GetChatCompletionsAsync(options);
         string aiResponse = response.Value.Choices[0].Message.Content;
 
-        // TÍTULO INTELIGENTE
+        // 4. GERAÇÃO DE TÍTULO (Se for o início da conversa)
         string title = "Conversa Antiga";
-        if (options.Messages.Count <= 2) {
+        if (options.Messages.Count <= 2)
+        {
             var tOpt = new ChatCompletionsOptions { DeploymentName = _deploymentName, MaxTokens = 10 };
             tOpt.Messages.Add(new ChatRequestSystemMessage("Resuma em 3 palavras sem aspas."));
             tOpt.Messages.Add(new ChatRequestUserMessage(userPrompt));
@@ -54,8 +75,9 @@ public class AskAI
             title = tRes.Value.Choices[0].Message.Content.Trim();
         }
 
-        // SALVA NO BANCO
-        await _tableClient.AddEntityAsync(new ChatHistoryEntity {
+        // 5. PERSISTÊNCIA NO BANCO (Salvando apenas o texto para economizar espaço)
+        await _tableClient.AddEntityAsync(new ChatHistoryEntity
+        {
             PartitionKey = sessionId,
             RowKey = DateTime.UtcNow.Ticks.ToString(),
             UserMessage = userPrompt,
@@ -63,9 +85,17 @@ public class AskAI
             ChatTitle = title
         });
 
+        // 6. RESPOSTA PARA O FRONTEND
         var res = req.CreateResponse(System.Net.HttpStatusCode.OK);
         await res.WriteAsJsonAsync(new { answer = aiResponse, sessionId = sessionId });
         return res;
     }
 }
-public class PromptRequest { public string? Prompt { get; set; } public string? SessionId { get; set; } }
+
+// DTO para receber dados do Frontend
+public class PromptRequest
+{
+    public string? Prompt { get; set; }
+    public string? SessionId { get; set; }
+    public string? ImageBase64 { get; set; }
+}
