@@ -27,9 +27,9 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           
-          ###### MAPEAMENTO FINAL ######
-          app_location: "KumulusAI"      # Onde está o seu index.html
-          api_location: "KumulusAI"      # Onde está o seu projeto C#
-          output_location: ""            # Deixe vazio
-          skip_app_build: true           # <--- O PULO DO GATO: Pula o build do front e apenas copia o index.html
-          ##############################
+          ###### CONFIGURAÇÃO DEFINITIVA ######
+          app_location: "/"               # Olha para a raiz do repositório
+          api_location: "KumulusAI"       # Procura o C# aqui
+          output_location: "KumulusAI"    # PEGA O INDEX.HTML DAQUI E JOGA NO SITE
+          skip_app_build: true            # Não tenta compilar o HTML
+          ######################################
