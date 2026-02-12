@@ -23,13 +23,13 @@ jobs:
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
-          # Nome do seu segredo no GitHub
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ZEALOUS_MEADOW_0F22CB40F }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           
-          ###### MAPEAMENTO DAS PASTAS ######
+          ###### MAPEAMENTO FINAL ######
           app_location: "KumulusAI"      # Onde está o seu index.html
-          api_location: "KumulusAI"      # Onde está o seu projeto C# (.csproj)
-          output_location: ""   
-          ###################################
+          api_location: "KumulusAI"      # Onde está o seu projeto C#
+          output_location: ""            # Deixe vazio
+          skip_app_build: true           # <--- O PULO DO GATO: Pula o build do front e apenas copia o index.html
+          ##############################
