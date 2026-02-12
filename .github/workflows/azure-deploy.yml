@@ -30,6 +30,6 @@ jobs:
           ###### MAPEAMENTO FINAL ######
           app_location: "KumulusAI"      # Onde está o seu index.html
           api_location: "KumulusAI"      # Onde está o seu projeto C#
-          output_location: ""            # Deixe vazio
+          output_location: "KumulusAI"            # Deixe vazio
           skip_app_build: true           # <--- O PULO DO GATO: Pula o build do front e apenas copia o index.html
           ##############################
