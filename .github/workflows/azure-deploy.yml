@@ -27,9 +27,9 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           
-          ###### CONFIGURAÇÃO DEFINITIVA ######
-          app_location: "/"               # Olha para a raiz do repositório
-          api_location: "KumulusAI"       # Procura o C# aqui
-          output_location: "KumulusAI"    # PEGA O INDEX.HTML DAQUI E JOGA NO SITE
-          skip_app_build: true            # Não tenta compilar o HTML
-          ######################################
+          ###### CONFIGURAÇÃO QUE FUNCIONA ######
+          app_location: "KumulusAI"      # Onde o robô entra para achar o index.html
+          api_location: "KumulusAI"      # Onde o robô entra para achar o C#
+          output_location: ""            # Vazio, porque o site já está na raiz da pasta acima
+          skip_app_build: true           # Apenas copia o que achar
+          ########################################
