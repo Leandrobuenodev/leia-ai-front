@@ -16,12 +16,17 @@ public class AskAI
 
     public AskAI(IConfiguration config)
     {
-        // Pega os nomes EXATOS que estão no seu Portal Azure
+        var endpoint = config["AZURE_OPENAI_ENDPOINT"];
+        var key = config["AZURE_OPENAI_KEY"];
         _deploymentName = config["AZURE_OPENAI_DEPLOYMENT_NAME"] ?? "gpt-4o-mini";
-        _aiClient = new OpenAIClient(
-            new Uri(config["AZURE_OPENAI_ENDPOINT"]!),
-            new AzureKeyCredential(config["AZURE_OPENAI_KEY"]!)
-        );
+
+        // Validação básica para o ambiente local (local.settings.json)
+        if (string.IsNullOrEmpty(endpoint) || !endpoint.StartsWith("http"))
+        {
+            throw new Exception("ERRO: Endpoint não configurado corretamente.");
+        }
+
+        _aiClient = new OpenAIClient(new Uri(endpoint), new AzureKeyCredential(key!));
         _tableClient = new TableClient(config["AzureWebJobsStorage"]!, "HistoricoConversas");
         _tableClient.CreateIfNotExists();
     }
@@ -34,10 +39,10 @@ public class AskAI
         string userPrompt = requestBody?.Prompt ?? "";
         string imageBase64 = requestBody?.ImageBase64 ?? "";
 
-        var options = new ChatCompletionsOptions { DeploymentName = _deploymentName, MaxTokens = 800 };
-        options.Messages.Add(new ChatRequestSystemMessage("Você é a LeIA, assistente técnica da Kumulus. Use Markdown."));
+        var options = new ChatCompletionsOptions { DeploymentName = _deploymentName, MaxTokens = 1000 };
+        options.Messages.Add(new ChatRequestSystemMessage("Você é a LeIA, assistente técnica da Kumulus. Responda em Markdown."));
 
-        // 1. RECUPERAÇÃO DE HISTÓRICO
+        // Recupera histórico usando a entidade já definida no seu projeto
         var history = _tableClient.QueryAsync<ChatHistoryEntity>(filter: $"PartitionKey eq '{sessionId}'");
         await foreach (var entity in history)
         {
@@ -45,19 +50,15 @@ public class AskAI
             options.Messages.Add(new ChatRequestAssistantMessage(entity.AIMessage));
         }
 
-        // 2. LÓGICA DE IMAGEM (Limpa e envia)
+        // Processamento de Imagem
         if (!string.IsNullOrEmpty(imageBase64))
         {
-            // Remove o prefixo "data:image/..." caso ele venha do front-end
             if (imageBase64.Contains(",")) imageBase64 = imageBase64.Split(',')[1];
-
-            // Criando a URI de dados de forma segura
-            var imageUri = new Uri($"data:image/jpeg;base64,{imageBase64}");
 
             var multimodalContent = new List<ChatMessageContentItem>
             {
                 new ChatMessageTextContentItem(userPrompt),
-                new ChatMessageImageContentItem(imageUri)
+                new ChatMessageImageContentItem(new Uri($"data:image/jpeg;base64,{imageBase64}"))
             };
             options.Messages.Add(new ChatRequestUserMessage(multimodalContent));
         }
@@ -66,18 +67,16 @@ public class AskAI
             options.Messages.Add(new ChatRequestUserMessage(userPrompt));
         }
 
-        // 3. CHAMADA À IA
         var response = await _aiClient.GetChatCompletionsAsync(options);
         string aiResponse = response.Value.Choices[0].Message.Content;
 
-        // 4. PERSISTÊNCIA E RESPOSTA
         await _tableClient.AddEntityAsync(new ChatHistoryEntity
         {
             PartitionKey = sessionId,
             RowKey = DateTime.UtcNow.Ticks.ToString(),
             UserMessage = userPrompt,
             AIMessage = aiResponse,
-            ChatTitle = "Conversa com Imagem"
+            ChatTitle = "Conversa LeIA"
         });
 
         var res = req.CreateResponse(System.Net.HttpStatusCode.OK);
