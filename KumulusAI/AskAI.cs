@@ -25,7 +25,7 @@ public class AskAI
 
         try
         {
-            logger.LogInformation(">>> INICIANDO EXECUÇÃO SEGURA <<<");
+            logger.LogInformation(">>> INICIANDO EXECUÇÃO (VERSÃO BETA.15) <<<");
 
             string endpoint = _config["AZURE_OPENAI_ENDPOINT"] ?? "";
             string key = _config["AZURE_OPENAI_KEY"] ?? "";
@@ -34,23 +34,21 @@ public class AskAI
 
             if (string.IsNullOrEmpty(endpoint)) throw new Exception("Endpoint da OpenAI está vazio ou nulo.");
             if (string.IsNullOrEmpty(key)) throw new Exception("Chave da OpenAI está vazia ou nula.");
-            if (string.IsNullOrEmpty(connectionString)) throw new Exception("Connection String do Storage está vazia.");
 
+            // Inicialização do cliente
             var aiClient = new OpenAIClient(new Uri(endpoint), new AzureKeyCredential(key));
             var tableClient = new TableClient(connectionString, "HistoricoConversas");
             await tableClient.CreateIfNotExistsAsync();
 
             string requestBodyStr = await new StreamReader(req.Body).ReadToEndAsync();
-            if (string.IsNullOrEmpty(requestBodyStr)) throw new Exception("O corpo da requisição chegou vazio.");
-
             PromptRequest? requestBody;
             try
             {
                 requestBody = System.Text.Json.JsonSerializer.Deserialize<PromptRequest>(requestBodyStr, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             }
-            catch (Exception jsonEx)
+            catch
             {
-                throw new Exception($"Erro ao ler JSON: {jsonEx.Message}");
+                requestBody = new PromptRequest(); // Fallback
             }
 
             string sessionId = requestBody?.SessionId ?? Guid.NewGuid().ToString();
@@ -60,6 +58,7 @@ public class AskAI
             var options = new ChatCompletionsOptions { DeploymentName = deploymentName, MaxTokens = 1000 };
             options.Messages.Add(new ChatRequestSystemMessage("Você é a LeIA. Responda em Markdown."));
 
+            // Histórico
             try
             {
                 var history = tableClient.QueryAsync<ChatLogEntity>(filter: $"PartitionKey eq '{sessionId}'");
@@ -71,32 +70,40 @@ public class AskAI
             }
             catch (Exception exHist)
             {
-                logger.LogWarning($"Não foi possível ler histórico: {exHist.Message}");
+                logger.LogWarning($"Histórico indisponível: {exHist.Message}");
             }
 
+            // --- LÓGICA DE IMAGEM CORRIGIDA PARA BETA.15 ---
             if (!string.IsNullOrEmpty(imageBase64))
             {
-                logger.LogInformation("Processando imagem...");
+                logger.LogInformation("Processando imagem para Beta.15...");
+
+                // 1. Limpeza do Base64
                 if (imageBase64.Contains(",")) imageBase64 = imageBase64.Split(',')[1];
                 imageBase64 = imageBase64.Trim().Replace(" ", "+").Replace("\n", "").Replace("\r", "");
 
-                byte[] imageBytes = Convert.FromBase64String(imageBase64);
+                // 2. Montar Data URI (O jeito que a Beta.15 aceita)
+                // Formato: data:image/jpeg;base64,....
+                string dataUrl = $"data:image/jpeg;base64,{imageBase64}";
 
-                var multimodalMessage = new ChatRequestUserMessage(
-                    new ChatMessageTextContentItem(userPrompt),
-                    new ChatMessageImageContentItem(BinaryData.FromBytes(imageBytes), "image/jpeg")
-                );
+                // 3. Criar mensagem usando URI (correção do erro CS1503)
+                var imageItem = new ChatMessageImageContentItem(new Uri(dataUrl));
+                var textItem = new ChatMessageTextContentItem(userPrompt);
+
+                var multimodalMessage = new ChatRequestUserMessage(textItem, imageItem);
                 options.Messages.Add(multimodalMessage);
             }
             else
             {
                 options.Messages.Add(new ChatRequestUserMessage(userPrompt));
             }
+            // -----------------------------------------------
 
-            logger.LogInformation("Enviando para OpenAI...");
+            logger.LogInformation("Enviando requisição OpenAI...");
             var response = await aiClient.GetChatCompletionsAsync(options);
             string aiResponse = response.Value.Choices[0].Message.Content;
 
+            // Salvar no Banco
             await tableClient.AddEntityAsync(new ChatLogEntity
             {
                 PartitionKey = sessionId,
@@ -112,14 +119,15 @@ public class AskAI
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "ERRO CAPTURADO NO RUN");
+            logger.LogError(ex, "FALHA GERAL");
             var errorRes = req.CreateResponse(System.Net.HttpStatusCode.InternalServerError);
-            await errorRes.WriteStringAsync($"ERRO CRÍTICO: {ex.Message} -> {ex.StackTrace}");
+            await errorRes.WriteStringAsync($"ERRO: {ex.Message}");
             return errorRes;
         }
     }
 }
 
+// Classes Auxiliares
 public class ChatLogEntity : ITableEntity
 {
     public string PartitionKey { get; set; } = "";
