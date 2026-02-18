@@ -53,18 +53,24 @@ public class AskAI
         // Processamento de Imagem
         if (!string.IsNullOrEmpty(imageBase64))
         {
+            // Limpa o prefixo se existir
             if (imageBase64.Contains(",")) imageBase64 = imageBase64.Split(',')[1];
 
+            // Converte a string Base64 em bytes reais
+            byte[] imageBytes = Convert.FromBase64String(imageBase64);
+
+            // Cria o item de conteúdo usando BinaryData (evita o limite do Uri)
+            var imageContent = new ChatMessageImageContentItem(
+                BinaryData.FromBytes(imageBytes),
+                "image/jpeg"
+            );
+
             var multimodalContent = new List<ChatMessageContentItem>
-            {
-                new ChatMessageTextContentItem(userPrompt),
-                new ChatMessageImageContentItem(new Uri($"data:image/jpeg;base64,{imageBase64}"))
-            };
+    {
+        new ChatMessageTextContentItem(userPrompt),
+        imageContent
+    };
             options.Messages.Add(new ChatRequestUserMessage(multimodalContent));
-        }
-        else
-        {
-            options.Messages.Add(new ChatRequestUserMessage(userPrompt));
         }
 
         var response = await _aiClient.GetChatCompletionsAsync(options);
