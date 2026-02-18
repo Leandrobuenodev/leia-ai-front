@@ -24,7 +24,7 @@ public class AskAI
 
         if (string.IsNullOrEmpty(endpoint) || !endpoint.StartsWith("http"))
         {
-            throw new Exception("ERRO: Endpoint OpenAI não configurado ou inválido.");
+            throw new Exception("ERRO: Configuração de Endpoint inválida ou não resolvida.");
         }
 
         _aiClient = new OpenAIClient(new Uri(endpoint), new AzureKeyCredential(key!));
@@ -39,13 +39,13 @@ public class AskAI
         {
             var requestBody = await req.ReadFromJsonAsync<PromptRequest>();
             string sessionId = requestBody?.SessionId ?? Guid.NewGuid().ToString();
-            string userPrompt = requestBody?.Prompt ?? "";
+            string userPrompt = string.IsNullOrWhiteSpace(requestBody?.Prompt) ? "Analise esta imagem" : requestBody.Prompt;
             string imageBase64 = requestBody?.ImageBase64 ?? "";
 
             var options = new ChatCompletionsOptions { DeploymentName = _deploymentName, MaxTokens = 1000 };
-            options.Messages.Add(new ChatRequestSystemMessage("Você é a LeIA, assistente técnica da Kumulus. Responda em Markdown."));
+            options.Messages.Add(new ChatRequestSystemMessage("Você é a LeIA, assistente técnica da Kumulus. Você tem visão computacional e pode analisar imagens detalhadamente."));
 
-            // 1. Recupera histórico
+            // 1. Recuperação de Histórico
             var history = _tableClient.QueryAsync<ChatHistoryEntity>(filter: $"PartitionKey eq '{sessionId}'");
             await foreach (var entity in history)
             {
@@ -53,30 +53,31 @@ public class AskAI
                 options.Messages.Add(new ChatRequestAssistantMessage(entity.AIMessage));
             }
 
-            // 2. Processamento Multimodal (O FIX ESTÁ AQUI)
+            // 2. Lógica Multimodal
             if (!string.IsNullOrEmpty(imageBase64))
             {
+                // Limpeza do Base64
                 if (imageBase64.Contains(",")) imageBase64 = imageBase64.Split(',')[1];
+                imageBase64 = imageBase64.Trim().Replace("\n", "").Replace("\r", "");
+
                 byte[] imageBytes = Convert.FromBase64String(imageBase64);
 
-                var multimodalContent = new List<ChatMessageContentItem>
-                {
+                var userMessageWithImage = new ChatRequestUserMessage(
                     new ChatMessageTextContentItem(userPrompt),
                     new ChatMessageImageContentItem(BinaryData.FromBytes(imageBytes), "image/jpeg")
-                };
-                options.Messages.Add(new ChatRequestUserMessage(multimodalContent));
+                );
+                options.Messages.Add(userMessageWithImage);
             }
             else
             {
-                // FIX: Adiciona o prompt mesmo quando NÃO há imagem
                 options.Messages.Add(new ChatRequestUserMessage(userPrompt));
             }
 
-            // 3. Chamada à IA
+            // 3. Chamada à OpenAI
             var response = await _aiClient.GetChatCompletionsAsync(options);
             string aiResponse = response.Value.Choices[0].Message.Content;
 
-            // 4. Salva histórico
+            // 4. Persistência
             await _tableClient.AddEntityAsync(new ChatHistoryEntity
             {
                 PartitionKey = sessionId,
@@ -92,10 +93,9 @@ public class AskAI
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro no AskAI");
+            _logger.LogError(ex, "Erro no processamento da imagem ou texto.");
             var errorRes = req.CreateResponse(System.Net.HttpStatusCode.InternalServerError);
-            // Retorna o erro real para o chat para facilitar o seu debug
-            await errorRes.WriteStringAsync($"Erro técnico: {ex.Message}");
+            await errorRes.WriteStringAsync($"ERRO TÉCNICO: {ex.Message}");
             return errorRes;
         }
     }
