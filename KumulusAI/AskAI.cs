@@ -27,11 +27,12 @@ public class AskAI
 
         try
         {
-            // 1. Configurações
+            // ... dentro da Function AskAI
             string endpoint = _config["AZURE_OPENAI_ENDPOINT"] ?? "";
             string key = _config["AZURE_OPENAI_KEY"] ?? "";
             string deployment = _config["AZURE_OPENAI_DEPLOYMENT_NAME"] ?? "gpt-4o-mini";
-            string connString = _config["AzureWebJobsStorage"] ?? "";
+            // Nova linha com o nome permitido:
+            string connString = _config["STORAGE_CONNECTION_STRING"] ?? "";
 
             // 2. Leitura do Body
             string requestBodyStr = await new StreamReader(req.Body).ReadToEndAsync();
