@@ -1,21 +1,25 @@
 using Azure;
-using Azure.AI.OpenAI;
 using Azure.Data.Tables;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
-using System.IO;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 
 namespace KumulusAI;
 
 public class AskAI
 {
     private readonly IConfiguration _config;
+    private readonly HttpClient _httpClient;
 
-    public AskAI(IConfiguration config)
+    public AskAI(IConfiguration config, IHttpClientFactory httpClientFactory)
     {
         _config = config;
+        _httpClient = httpClientFactory.CreateClient();
     }
 
     [Function("AskAI")]
@@ -25,85 +29,102 @@ public class AskAI
 
         try
         {
-            logger.LogInformation(">>> INICIANDO EXECUÇÃO (VERSÃO BETA.15) <<<");
-
+            // 1. Configurações
             string endpoint = _config["AZURE_OPENAI_ENDPOINT"] ?? "";
             string key = _config["AZURE_OPENAI_KEY"] ?? "";
-            string connectionString = _config["AzureWebJobsStorage"] ?? "";
             string deploymentName = _config["AZURE_OPENAI_DEPLOYMENT_NAME"] ?? "gpt-4o-mini";
+            string connectionString = _config["AzureWebJobsStorage"] ?? "";
 
-            if (string.IsNullOrEmpty(endpoint)) throw new Exception("Endpoint da OpenAI está vazio ou nulo.");
-            if (string.IsNullOrEmpty(key)) throw new Exception("Chave da OpenAI está vazia ou nula.");
+            // URL da API REST (Manual)
+            // Formato: https://{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=2024-02-15-preview
+            if (endpoint.EndsWith("/")) endpoint = endpoint.TrimEnd('/');
+            string apiUrl = $"{endpoint}/openai/deployments/{deploymentName}/chat/completions?api-version=2024-02-15-preview";
 
-            // Inicialização do cliente
-            var aiClient = new OpenAIClient(new Uri(endpoint), new AzureKeyCredential(key));
-            var tableClient = new TableClient(connectionString, "HistoricoConversas");
-            await tableClient.CreateIfNotExistsAsync();
-
+            // 2. Leitura do Request
             string requestBodyStr = await new StreamReader(req.Body).ReadToEndAsync();
-            PromptRequest? requestBody;
-            try
-            {
-                requestBody = System.Text.Json.JsonSerializer.Deserialize<PromptRequest>(requestBodyStr, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            }
-            catch
-            {
-                requestBody = new PromptRequest(); // Fallback
-            }
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var requestBody = JsonSerializer.Deserialize<PromptRequest>(requestBodyStr, options);
 
             string sessionId = requestBody?.SessionId ?? Guid.NewGuid().ToString();
             string userPrompt = string.IsNullOrWhiteSpace(requestBody?.Prompt) ? "Analise esta imagem" : requestBody.Prompt;
             string imageBase64 = requestBody?.ImageBase64 ?? "";
 
-            var options = new ChatCompletionsOptions { DeploymentName = deploymentName, MaxTokens = 1000 };
-            options.Messages.Add(new ChatRequestSystemMessage("Você é a LeIA. Responda em Markdown."));
+            // 3. Montar Lista de Mensagens (Protocolo OpenAI JSON)
+            var messagesList = new List<object>();
 
-            // Histórico
+            // System Message
+            messagesList.Add(new { role = "system", content = "Você é a LeIA, assistente virtual. Responda usando formatação Markdown." });
+
+            // Histórico (Recuperar do Banco)
+            var tableClient = new TableClient(connectionString, "HistoricoConversas");
+            await tableClient.CreateIfNotExistsAsync();
+
             try
             {
                 var history = tableClient.QueryAsync<ChatLogEntity>(filter: $"PartitionKey eq '{sessionId}'");
                 await foreach (var entity in history)
                 {
-                    options.Messages.Add(new ChatRequestUserMessage(entity.UserMessage));
-                    options.Messages.Add(new ChatRequestAssistantMessage(entity.AIMessage));
+                    messagesList.Add(new { role = "user", content = entity.UserMessage });
+                    messagesList.Add(new { role = "assistant", content = entity.AIMessage });
                 }
             }
-            catch (Exception exHist)
-            {
-                logger.LogWarning($"Histórico indisponível: {exHist.Message}");
-            }
+            catch { /* Ignora erro de histórico para não travar */ }
 
-            // --- LÓGICA DE IMAGEM CORRIGIDA PARA BETA.15 ---
+            // 4. Adicionar Mensagem Atual (Lógica da Imagem)
             if (!string.IsNullOrEmpty(imageBase64))
             {
-                logger.LogInformation("Processando imagem para Beta.15...");
-
-                // 1. Limpeza do Base64
                 if (imageBase64.Contains(",")) imageBase64 = imageBase64.Split(',')[1];
                 imageBase64 = imageBase64.Trim().Replace(" ", "+").Replace("\n", "").Replace("\r", "");
 
-                // 2. Montar Data URI (O jeito que a Beta.15 aceita)
-                // Formato: data:image/jpeg;base64,....
                 string dataUrl = $"data:image/jpeg;base64,{imageBase64}";
 
-                // 3. Criar mensagem usando URI (correção do erro CS1503)
-                var imageItem = new ChatMessageImageContentItem(new Uri(dataUrl));
-                var textItem = new ChatMessageTextContentItem(userPrompt);
-
-                var multimodalMessage = new ChatRequestUserMessage(textItem, imageItem);
-                options.Messages.Add(multimodalMessage);
+                // Payload Multimodal Manual
+                messagesList.Add(new
+                {
+                    role = "user",
+                    content = new object[] {
+                        new { type = "text", text = userPrompt },
+                        new { type = "image_url", image_url = new { url = dataUrl } }
+                    }
+                });
             }
             else
             {
-                options.Messages.Add(new ChatRequestUserMessage(userPrompt));
+                messagesList.Add(new { role = "user", content = userPrompt });
             }
-            // -----------------------------------------------
 
-            logger.LogInformation("Enviando requisição OpenAI...");
-            var response = await aiClient.GetChatCompletionsAsync(options);
-            string aiResponse = response.Value.Choices[0].Message.Content;
+            // 5. Enviar para OpenAI (HTTP Puro)
+            var payload = new
+            {
+                messages = messagesList,
+                max_tokens = 1000,
+                temperature = 0.7
+            };
 
-            // Salvar no Banco
+            var jsonPayload = JsonSerializer.Serialize(payload);
+            var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+            _httpClient.DefaultRequestHeaders.Clear();
+            _httpClient.DefaultRequestHeaders.Add("api-key", key);
+
+            var response = await _httpClient.PostAsync(apiUrl, content);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync();
+                throw new Exception($"OpenAI Error ({response.StatusCode}): {errorBody}");
+            }
+
+            // 6. Ler Resposta
+            var responseJson = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(responseJson);
+            string aiResponse = doc.RootElement
+                                   .GetProperty("choices")[0]
+                                   .GetProperty("message")
+                                   .GetProperty("content")
+                                   .GetString() ?? "";
+
+            // 7. Salvar e Retornar
             await tableClient.AddEntityAsync(new ChatLogEntity
             {
                 PartitionKey = sessionId,
@@ -119,7 +140,7 @@ public class AskAI
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "FALHA GERAL");
+            logger.LogError(ex, "ERRO NO HTTP MANUAL");
             var errorRes = req.CreateResponse(System.Net.HttpStatusCode.InternalServerError);
             await errorRes.WriteStringAsync($"ERRO: {ex.Message}");
             return errorRes;
@@ -127,7 +148,7 @@ public class AskAI
     }
 }
 
-// Classes Auxiliares
+// Entidades
 public class ChatLogEntity : ITableEntity
 {
     public string PartitionKey { get; set; } = "";

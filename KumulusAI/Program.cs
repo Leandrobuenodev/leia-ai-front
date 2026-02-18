@@ -6,9 +6,10 @@ var host = new HostBuilder()
     .ConfigureFunctionsWorkerDefaults()
     .ConfigureServices(services =>
     {
-        // Telemetria padrão para monitorar erros
         services.AddApplicationInsightsTelemetryWorkerService();
         services.ConfigureFunctionsApplicationInsights();
+        // ESTA LINHA HABILITA O MODO MANUAL
+        services.AddHttpClient();
     })
     .Build();
 
