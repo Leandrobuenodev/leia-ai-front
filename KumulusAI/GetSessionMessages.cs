@@ -15,7 +15,7 @@ public class GetSessionMessages
     public GetSessionMessages(ILoggerFactory loggerFactory, IConfiguration config)
     {
         _logger = loggerFactory.CreateLogger<GetSessionMessages>();
-        _tableClient = new TableClient(config["AzureWebJobsStorage"] ?? "", "HistoricoConversas");
+        _tableClient = new TableClient(config["STORAGE_CONNECTION_STRING"] ?? "", "HistoricoConversas");
     }
 
     [Function("GetSessionMessages")]

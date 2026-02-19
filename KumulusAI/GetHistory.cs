@@ -14,7 +14,7 @@ public class GetHistory
     public GetHistory(ILoggerFactory loggerFactory, IConfiguration config)
     {
         _logger = loggerFactory.CreateLogger<GetHistory>();
-        string connectionString = config["AzureWebJobsStorage"] ?? "";
+        string connectionString = config["STORAGE_CONNECTION_STRING"] ?? "";
         _tableClient = new TableClient(connectionString, "HistoricoConversas");
     }
 

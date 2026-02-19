@@ -16,7 +16,7 @@ public class DeleteHistory
     {
         _logger = loggerFactory.CreateLogger<DeleteHistory>();
         // Conecta na mesma tabela onde você salva o histórico
-        _tableClient = new TableClient(config["AzureWebJobsStorage"] ?? "", "HistoricoConversas");
+        _tableClient = new TableClient(config["STORAGE_CONNECTION_STRING"] ?? "", "HistoricoConversas");
     }
 
     [Function("DeleteHistory")]
